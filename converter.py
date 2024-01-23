@@ -363,7 +363,37 @@ def _to_np(grip_value):
     return np.array([grip_value])
 
 
-def convert_dataset(base_path, absolute_ac):
+def _gaussian_norm(all_acs):
+    print('Using gaussian norm')
+    all_acs_arr = np.array(all_acs)
+    mean = np.mean(all_acs_arr, axis=0)
+    std =  np.std(all_acs_arr, axis=0)
+    if not std.all(): # handle situation w/ all 0 actions
+        std[std == 0] = 1e-17
+
+    for a in all_acs:
+        a -= mean
+        a /= std
+
+    return dict(loc=mean.tolist(), scale=std.tolist())
+
+
+def _max_min_norm(all_acs):
+    print('Using max min norm')
+    all_acs_arr = np.array(all_acs)
+    max_ac = np.max(all_acs_arr, axis=0)
+    min_ac = np.min(all_acs_arr, axis=0)
+
+    mid = (max_ac + min_ac) / 2
+    delta = (max_ac - min_ac) / 2
+
+    for a in all_acs:
+        a -= mid
+        a /= delta
+    return dict(loc=mid.tolist(), scale=delta.tolist())
+
+
+def convert_dataset(base_path, absolute_ac, max_min_norm):
     gripper_ac = 'gripper_position' if absolute_ac else 'gripper_velocity'
     robot_ac = 'cartesian_position' if absolute_ac else 'cartesian_velocity'
     print(f'Using actions {robot_ac} and {gripper_ac}')
@@ -410,19 +440,11 @@ def convert_dataset(base_path, absolute_ac):
             proc_traj.append((obs, action, reward))
         out_trajs.append(proc_traj)
 
-    all_acs_arr = np.array(all_acs)
-    mean = np.mean(all_acs_arr, axis=0)
-    std =  np.std(all_acs_arr, axis=0)
-    if not std.all(): # handle situation w/ all 0 actions
-        std[std == 0] = 1e-17
+    ac_dict = _max_min_norm(all_acs) if max_min_norm \
+              else _gaussian_norm(all_acs)
 
-    for a in all_acs:
-        a -= mean
-        a /= std
-    
     with open('ac_norm.json', 'w') as f:
-        norm_dict = dict(mean=mean.tolist(), std=std.tolist())
-        json.dump(norm_dict, f)
+        json.dump(ac_dict, f)
 
     with open('buf.pkl', 'wb') as f:
         pkl.dump(out_trajs, f)
@@ -432,5 +454,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('path')
     parser.add_argument('--absolute', action='store_true')
+    parser.add_argument('--max_min_norm', action='store_true')
     args = parser.parse_args()
-    convert_dataset(os.path.expanduser(args.path), args.absolute)
+    convert_dataset(os.path.expanduser(args.path), args.absolute, args.max_min_norm)
