@@ -363,7 +363,11 @@ def _to_np(grip_value):
     return np.array([grip_value])
 
 
-def convert_dataset(base_path):
+def convert_dataset(base_path, absolute_ac):
+    gripper_ac = 'gripper_position' if absolute_ac else 'gripper_velocity'
+    robot_ac = 'cartesian_position' if absolute_ac else 'cartesian_velocity'
+    print(f'Using actions {robot_ac} and {gripper_ac}')
+
     episode_paths = crawler(base_path)
     episode_paths = [p for p in episode_paths if os.path.exists(p + '/trajectory.h5') and \
             os.path.exists(p + '/recordings/MP4')]
@@ -391,7 +395,7 @@ def convert_dataset(base_path):
             exterior_ids = sorted([k for k, v in camera_type_dict.items() if v != 0])
 
             reward = 0  # DUMMY VALUE
-            action = np.concatenate((action_dict['cartesian_velocity'], _to_np(action_dict['gripper_velocity']))).astype(np.float32)
+            action = np.concatenate((action_dict[robot_ac], _to_np(action_dict[gripper_ac]))).astype(np.float32)
 
             if np.sum(np.abs(action)) == 0 and not started:
                 continue
@@ -416,16 +420,17 @@ def convert_dataset(base_path):
         a -= mean
         a /= std
     
-    with open(os.path.join(base_path, 'ac_norm.json'), 'w') as f:
+    with open('ac_norm.json', 'w') as f:
         norm_dict = dict(mean=mean.tolist(), std=std.tolist())
         json.dump(norm_dict, f)
 
-    with open(os.path.join(base_path, 'buf.pkl'), 'wb') as f:
+    with open('buf.pkl', 'wb') as f:
         pkl.dump(out_trajs, f)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('path')
+    parser.add_argument('--absolute', action='store_true')
     args = parser.parse_args()
-    convert_dataset(os.path.expanduser(args.path))
+    convert_dataset(os.path.expanduser(args.path), args.absolute)
