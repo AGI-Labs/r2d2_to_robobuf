@@ -15,6 +15,13 @@ from collections import defaultdict
 import random
 from copy import deepcopy
 from PIL import Image
+from scipy.spatial.transform import Rotation as R
+
+
+def euler_to_r6(euler, degrees=False):
+    rot_mat = R.from_euler("xyz", euler, degrees=degrees).as_matrix()
+    a1, a2 = rot_mat[0], rot_mat[1]
+    return np.concatenate((a1, a2))
 
 
 camera_type_dict = {
@@ -393,11 +400,13 @@ def _max_min_norm(all_acs):
     return dict(loc=mid.tolist(), scale=delta.tolist())
 
 
-def convert_dataset(base_path, absolute_ac, max_min_norm):
-    gripper_ac = 'gripper_position' if absolute_ac else 'gripper_velocity'
-    robot_ac = 'cartesian_position' if absolute_ac else 'cartesian_velocity'
-    print(f'Using actions {robot_ac} and {gripper_ac}')
-
+def convert_dataset(base_path, absolute_ac, max_min_norm, use_r6):
+    gripper_ac_key = 'gripper_position' if absolute_ac else 'gripper_velocity'
+    robot_ac_key = 'cartesian_position' if absolute_ac else 'cartesian_velocity'
+    print(f'Using actions {robot_ac_key} and {gripper_ac_key}')
+    print(f'max_min_norm={max_min_norm} and use_r6={use_r6}')
+    print()
+    
     episode_paths = crawler(base_path)
     episode_paths = [p for p in episode_paths if os.path.exists(p + '/trajectory.h5') and \
             os.path.exists(p + '/recordings/MP4')]
@@ -425,7 +434,10 @@ def convert_dataset(base_path, absolute_ac, max_min_norm):
             exterior_ids = sorted([k for k, v in camera_type_dict.items() if v != 0])
 
             reward = 0  # DUMMY VALUE
-            action = np.concatenate((action_dict[robot_ac], _to_np(action_dict[gripper_ac]))).astype(np.float32)
+            rbt_action = action_dict[robot_ac_key]
+            rbt_action = np.concatenate((rbt_action[:3], euler_to_r6(rbt_action[3:]))) if use_r6 \
+                         else rbt_action
+            action = np.concatenate((rbt_action, _to_np(action_dict[gripper_ac_key]))).astype(np.float32)
 
             if np.sum(np.abs(action)) == 0 and not started:
                 continue
@@ -455,5 +467,6 @@ if __name__ == '__main__':
     parser.add_argument('path')
     parser.add_argument('--absolute', action='store_true')
     parser.add_argument('--max_min_norm', action='store_true')
+    parser.add_argument('--use_r6', action='store_true')
     args = parser.parse_args()
-    convert_dataset(os.path.expanduser(args.path), args.absolute, args.max_min_norm)
+    convert_dataset(os.path.expanduser(args.path), args.absolute, args.max_min_norm, args.use_r6)
